@@ -1,35 +1,30 @@
 name: Hertz Freerider Bevakning
 
 on:
+  # Manuell körning och schemalagd var 30:e minut
+  workflow_dispatch:
   schedule:
-    # Kör var 30:e minut
-    - cron:  '*/30 * * * *'
-  workflow_dispatch:   # gör det möjligt att köra manuellt från Actions-fliken
+    - cron: '*/30 * * * *'
 
 jobs:
   check_freerider:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.13
         uses: actions/setup-python@v4
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
-      - name: Install Python-dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install selenium webdriver-manager requests
+          pip install requests
 
-      - name: Install Chromium + Chromedriver
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
-
-      - name: Kör bevakningsskript
+      - name: Run monitoring script
         env:
           NTFY_TOPIC: Hertzbil_Sthlm-OSD
         run: python hertz_bevakning.py
