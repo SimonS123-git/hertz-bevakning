@@ -1,7 +1,6 @@
 name: Hertz Freerider Bevakning
 
 on:
-  # Manuell körning och schemalagd var 30:e minut
   workflow_dispatch:
   schedule:
     - cron: '*/30 * * * *'
