@@ -7,7 +7,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 
 # ntfy-topic som du prenumererar på i mobilen
 NTFY_TOPIC = "Hertzbil_Sthlm-OSD"
@@ -22,16 +21,20 @@ def skicka_notis(meddelande):
     requests.post(url, data=meddelande.encode("utf-8"))
 
 def kontrollera_resor():
-    print("▶️ Startar kontrollera_resor()")                    # DEBUG
+    print("▶️ Startar kontrollera_resor()")
     options = Options()
-    options.add_argument("--headless")
+    # Peka på den systeminstallerade Chromium
+    options.binary_location = "/usr/bin/chromium-browser"
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
+    # Peka på den system-Chromedriver som apt installerat
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
+        service=Service("/usr/bin/chromedriver"),
         options=options
     )
+
     print("🔗 Hämtar sidan…")
     driver.get("https://www.hertzfreerider.se/sv-se")
 
