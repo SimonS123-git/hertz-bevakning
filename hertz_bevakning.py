@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import time
 import requests
+import shutil
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -22,23 +23,28 @@ def skicka_notis(meddelande):
 
 def kontrollera_resor():
     print("▶️ Startar kontrollera_resor()")
+
+    # Debug: var ligger binärerna?
+    chromepath = shutil.which("chromium-browser") or shutil.which("chromium")
+    driverpath = shutil.which("chromedriver")
+    print("🖥️ chromium-browser:", chromepath)
+    print("🖥️ chromedriver   :", driverpath)
+
     options = Options()
-    # Peka på den systeminstallerade Chromium
-    options.binary_location = "/usr/bin/chromium-browser"
-    options.add_argument("--headless=new")
+    if chromepath:
+        options.binary_location = chromepath
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    # Peka på den system-Chromedriver som apt installerat
     driver = webdriver.Chrome(
-        service=Service("/usr/bin/chromedriver"),
+        service=Service(driverpath or "/usr/bin/chromedriver"),
         options=options
     )
 
     print("🔗 Hämtar sidan…")
     driver.get("https://www.hertzfreerider.se/sv-se")
 
-    # Vänta tills rutkorten laddats
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-test='trip-card']"))
