@@ -2,6 +2,7 @@
 import time
 import requests
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
@@ -35,17 +36,17 @@ def kontrollera_resor():
     # Vänta på att innehållet laddas
     time.sleep(5)
 
-    cards = driver.find_elements("css selector", "div.sc-dlfnbm.hLbIrd")
+    # Hitta alla element som innehåller både FROM_CITY och TO_CITY
+    cards = driver.find_elements(
+        By.XPATH,
+        f"//*[contains(text(), '{FROM_CITY}') and contains(text(), '{TO_CITY}')]"
+    )
     hittade_något = False
 
     for card in cards:
         text = card.text
-        if FROM_CITY in text and TO_CITY in text:
-            skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{text}")
-            hittade_något = True
-        elif TO_CITY in text and FROM_CITY in text:
-            skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{text}")
-            hittade_något = True
+        skicka_notis(f"🚗 Resa {FROM_CITY} ↔ {TO_CITY}:\n{text}")
+        hittade_något = True
 
     if not hittade_något:
         print(f"❌ Inga resor {FROM_CITY} ↔ {TO_CITY} hittades just nu.")
