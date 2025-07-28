@@ -1,24 +1,6 @@
-#!/usr/bin/env python3
-import time
-import requests
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-
-# ntfy-topic som du prenumererar på i mobilen
-NTFY_TOPIC = "Hertzbil_Sthlm-OSD"
-
-# Städer att matcha (byt till Visby ↔ Stockholm)
-FROM_CITY = "Visby"
-TO_CITY   = "Stockholm"
-
-def skicka_notis(meddelande):
-    """Skicka push-notis via ntfy."""
-    print(f"📲 Skickar notis: {meddelande}")
-    url = f"https://ntfy.sh/{NTFY_TOPIC}"
-    requests.post(url, data=meddelande.encode("utf-8"))
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 def kontrollera_resor():
     """Öppna Hertz Freerider, leta efter Visby ↔ Stockholm och eventuellt skicka notis."""
@@ -33,25 +15,37 @@ def kontrollera_resor():
     )
     driver.get("https://www.hertzfreerider.se/sv-se")
 
-    # Vänta på att innehållet laddas
-    time.sleep(5)
+    # 1) Vänta tills minst ett rutkort finns i DOM:en
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-test='trip-card']"))
+        )
+    except:
+        print("⚠️ Rutkorten laddades inte inom 15 sek.")
+        driver.quit()
+        return
 
-    # Hitta alla element som innehåller både FROM_CITY och TO_CITY
-    cards = driver.find_elements(
-        By.XPATH,
-        f"//*[contains(text(), '{FROM_CITY}') and contains(text(), '{TO_CITY}')]"
-    )
+    # 2) Hämta alla rutkort
+    cards = driver.find_elements(By.CSS_SELECTOR, "div[data-test='trip-card']")
+    print(f"🔎 Hittade {len(cards)} kort totalt för debug")  # debug
+
     hittade_något = False
 
-    for card in cards:
-        text = card.text
-        skicka_notis(f"🚗 Resa {FROM_CITY} ↔ {TO_CITY}:\n{text}")
-        hittade_något = True
+    # 3) Loopa igenom dem och kolla texten
+    for idx, card in enumerate(cards, 1):
+        text = card.text.strip()
+        print(f"📄 Kort #{idx}: {text.replace(chr(10),' | ')}")  # debug
 
+        # 4) Matcha Visby ↔ Stockholm inuti kortets samlade text
+        if FROM_CITY in text and TO_CITY in text:
+            skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{text}")
+            hittade_något = True
+        elif TO_CITY in text and FROM_CITY in text:
+            skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{text}")
+            hittade_något = True
+
+    # 5) Ingen match alls?
     if not hittade_något:
         print(f"❌ Inga resor {FROM_CITY} ↔ {TO_CITY} hittades just nu.")
 
     driver.quit()
-
-if __name__ == "__main__":
-    kontrollera_resor()
