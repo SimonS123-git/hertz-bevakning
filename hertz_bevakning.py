@@ -3,14 +3,13 @@ import re
 import json
 import requests
 
-# ntfy-topic som du prenumererar på i mobilen
+# ntfy-topic som du prenumererar på
 NTFY_TOPIC = "Hertzbil_Sthlm-OSD"
 
 # Städer att matcha
 FROM_CITY = "Visby"
 TO_CITY   = "Stockholm"
 
-# En vanlig desktop-UA för att inte bli blockad
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -24,52 +23,62 @@ def skicka_notis(meddelande: str):
     requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=meddelande.encode("utf-8"))
 
 def kontrollera_resor():
-    # 1) Hämta startsidan och extrahera build-ID
+    # 1) Hämta HTML
     resp = requests.get("https://www.hertzfreerider.se/sv-se", headers=HEADERS, timeout=20)
     resp.raise_for_status()
     html = resp.text
 
-    m = re.search(r'/_next/static/([^/]+)/', html)
+    # 2) Extrahera __NEXT_DATA__ JSON
+    m = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        html,
+        flags=re.S,
+    )
     if not m:
-        print("❌ Kunde inte hitta build-ID i HTML")
+        print("❌ Kunde inte hitta __NEXT_DATA__-script")
         return
-    build_id = m.group(1)
-    print("🔍 Hittat build-ID:", build_id)
 
-    # 2) Hämta JSON-dumpen för sidan
-    json_url = f"https://www.hertzfreerider.se/_next/data/{build_id}/sv-se.json"
-    resp = requests.get(json_url, headers=HEADERS, timeout=20)
+    data = json.loads(m.group(1))
+    build_id = data.get("buildId")
+    if not build_id:
+        print("❌ Kunde inte hitta buildId i __NEXT_DATA__")
+        return
+    print("🔍 Hittat buildId:", build_id)
+
+    # 3) Hämta api-dumpen
+    api_url = f"https://www.hertzfreerider.se/_next/data/{build_id}/sv-se.json"
+    resp = requests.get(api_url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
-    data = resp.json()
+    json_data = resp.json()
 
-    # 3) Plocka ut trips-listan någonstans i pageProps
-    page_props = data.get("pageProps", {})
+    # 4) Plocka ut trips-listan
+    page_props = json_data.get("pageProps", {})
     trips = None
-    for key, val in page_props.items():
-        if isinstance(val, list):
-            trips = val
-            break
-        if isinstance(val, dict):
-            for subval in val.values():
-                if isinstance(subval, list):
-                    trips = subval
-                    break
-        if trips is not None:
-            break
+    # djup-scanna efter första lista i pageProps
+    def find_list(obj):
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict):
+            for v in obj.values():
+                found = find_list(v)
+                if found:
+                    return found
+        return None
 
+    trips = find_list(page_props)
     if not trips:
-        print("❌ Hittade ingen lista med turer i JSON:en")
+        print("❌ Ingen trip-lista funnen i JSON")
         return
 
-    # 4) Filtrera och skicka notis
+    # 5) Filtrera och skicka notis
     hittade = False
     for trip in trips:
-        text = json.dumps(trip, ensure_ascii=False)
-        if FROM_CITY in text and TO_CITY in text:
-            skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{text}")
+        txt = json.dumps(trip, ensure_ascii=False)
+        if FROM_CITY in txt and TO_CITY in txt:
+            skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{txt}")
             hittade = True
-        elif TO_CITY in text and FROM_CITY in text:
-            skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{text}")
+        elif TO_CITY in txt and FROM_CITY in txt:
+            skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{txt}")
             hittade = True
 
     if not hittade:
