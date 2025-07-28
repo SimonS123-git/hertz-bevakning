@@ -1,85 +1,61 @@
 #!/usr/bin/env python3
-import re
-import json
+import time
 import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 
 # ntfy-topic som du prenumererar på i mobilen
 NTFY_TOPIC = "Hertzbil_Sthlm-OSD"
 
-# Städer att matcha
+# Städer att matcha (byt tillbaka till Visby ↔ Stockholm om du vill)
 FROM_CITY = "Visby"
 TO_CITY   = "Stockholm"
 
-# En vanlig desktop-UA för att inte bli blockad
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/116.0.0.0 Safari/537.36"
-    )
-}
-
-def skicka_notis(meddelande: str):
+def skicka_notis(meddelande):
+    """Skicka push-notis via ntfy."""
     print(f"📲 Skickar notis: {meddelande}")
-    requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=meddelande.encode("utf-8"))
+    url = f"https://ntfy.sh/{NTFY_TOPIC}"
+    requests.post(url, data=meddelande.encode("utf-8"))
 
 def kontrollera_resor():
-    # 1) Hämta startsidan och extrahera build-ID
-    resp = requests.get("https://www.hertzfreerider.se/sv-se", headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    html = resp.text
+    """Öppna Hertz Freerider, leta efter FROM_CITY ↔ TO_CITY och eventuellt skicka notis."""
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    # Viktigt: peka på den rätta chromium-binaryn på GitHub Actions
+    options.binary_location = "/usr/bin/chromium-browser"
 
-    m = re.search(r'/_next/static/([^/]+)/', html)
-    if not m:
-        print("❌ Kunne inte hitta build-ID i HTML")
-        return
-    build_id = m.group(1)
-    print("🔍 Hittat build-ID:", build_id)
+    driver = webdriver.Chrome(options=options)
+    driver.get("https://www.hertzfreerider.se/sv-se")
 
-    # 2) Hämta JSON-dumpen för sidan
-    json_url = f"https://www.hertzfreerider.se/_next/data/{build_id}/sv-se.json"
-    resp = requests.get(json_url, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        # Vänta upp till 30s på att korten ska dyka upp
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.sc-dlfnbm.hLbIrd"))
+        )
+        cards = driver.find_elements(By.CSS_SELECTOR, "div.sc-dlfnbm.hLbIrd")
+        hittade = False
 
-    # 3) Plocka ut rides/trips-listan under pageProps
-    page_props = data.get("pageProps", {})
-    # För Next.js-appar ligger ofta själva datan i pageProps.rides eller pageProps.freeRiderData.trips
-    # Vi försöker hitta den första listan i page_props:
-    trips = None
-    for key, val in page_props.items():
-        if isinstance(val, list):
-            print(f"ℹ️ Använder lista från pageProps['{key}'], längd={len(val)}")
-            trips = val
-            break
-        if isinstance(val, dict):
-            # leta en nivå till in
-            for subkey, subval in val.items():
-                if isinstance(subval, list):
-                    print(f"ℹ️ Använder lista från pageProps['{key}']['{subkey}'], längd={len(subval)}")
-                    trips = subval
-                    break
-        if trips is not None:
-            break
+        for card in cards:
+            text = card.text
+            if FROM_CITY in text and TO_CITY in text:
+                skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{text}")
+                hittade = True
+            elif TO_CITY in text and FROM_CITY in text:
+                skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{text}")
+                hittade = True
 
-    if not trips:
-        print("❌ Hittade ingen lista med turer i JSON:en")
-        return
+        if not hittade:
+            print(f"❌ Inga resor {FROM_CITY} ↔ {TO_CITY} hittades just nu.")
 
-    # 4) Filtrera turer på FROM_CITY → TO_CITY och TO_CITY → FROM_CITY
-    hittade = False
-    for trip in trips:
-        # Antag att varje trip har strängfält som innehåller städernas namn
-        text = json.dumps(trip, ensure_ascii=False)
-        if FROM_CITY in text and TO_CITY in text:
-            skicka_notis(f"🚗 Resa {FROM_CITY} → {TO_CITY}:\n{text}")
-            hittade = True
-        elif TO_CITY in text and FROM_CITY in text:
-            skicka_notis(f"🚗 Resa {TO_CITY} → {FROM_CITY}:\n{text}")
-            hittade = True
-
-    if not hittade:
-        print(f"❌ Inga resor {FROM_CITY} ↔ {TO_CITY} hittades.")
+    except Exception as e:
+        print(f"⚠️ Fel vid laddning av kort: {e}")
+    finally:
+        driver.quit()
 
 if __name__ == "__main__":
     kontrollera_resor()
